@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>牛马倒计时 · 黑色幽默版</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+html,body{margin:0;height:100%;background:#1f1f1f;font-family:"Microsoft YaHei",sans-serif;overflow:hidden}
+.wrap{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#e6e6e6}
+h1{letter-spacing:3px;margin-bottom:4px}
+.subtitle{font-size:13px;color:#aaa;margin-bottom:18px}
+.time{font-size:40px;font-weight:bold;letter-spacing:1px}
+.desc{margin-top:8px;font-size:15px;color:#999}
+
+/* 拉磨装置 */
+.mill-area{position:relative;width:320px;height:320px;margin-top:26px}
+.mill{position:absolute;left:50%;top:50%;width:190px;height:190px;margin:-95px;border-radius:50%;border:6px dashed #555;opacity:0.8}
+.animal{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px;animation:walk 10s linear infinite;filter:grayscale(1)}
+
+@keyframes walk{
+    from{transform:rotate(0deg) translateX(150px) rotate(0deg)}
+    to{transform:rotate(360deg) translateX(150px) rotate(-360deg)}
+}
+
+/* 环境牛马 */
+.side{position:absolute;width:70px;height:70px;opacity:0.7;filter:grayscale(1)}
+.left-top{left:6%;top:12%}
+.right-top{right:6%;top:14%}
+.left-bottom{left:9%;bottom:14%}
+.right-bottom{right:9%;bottom:12%}
+
+/* 浮动文案 */
+.bubble{position:absolute;color:#777;font-size:13px;opacity:0;animation:floatText 6s linear forwards}
+@keyframes floatText{
+    0%{transform:translateY(0);opacity:0}
+    10%{opacity:1}
+    90%{opacity:1}
+    100%{transform:translateY(-60px);opacity:0}
+}
+
+canvas#dust{position:absolute;left:0;top:0;width:100%;height:100%;z-index:1}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+    <h1>🐂 牛马倒计时</h1>
+    <div class="subtitle">努力不一定有结果，但一定很累</div>
+    <div class="time" id="time">00 天 00:00:00</div>
+    <div class="desc" id="desc">今天也在正常运转</div>
+
+    <div class="mill-area">
+        <div class="mill"></div>
+        <!-- 内嵌 SVG 牛（不依赖外链） -->
+        <svg class="animal" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <g fill="#666">
+                <ellipse cx="50" cy="55" rx="26" ry="18"/>
+                <circle cx="78" cy="50" r="6"/>
+                <rect x="20" y="68" width="6" height="18" rx="3"/>
+                <rect x="36" y="68" width="6" height="18" rx="3"/>
+                <rect x="56" y="68" width="6" height="18" rx="3"/>
+                <rect x="72" y="68" width="6" height="18" rx="3"/>
+                <path d="M72 44 Q90 30 92 32" stroke="#666" stroke-width="3" fill="none"/>
+                <path d="M72 46 Q90 40 92 42" stroke="#666" stroke-width="3" fill="none"/>
+            </g>
+        </svg>
+    </div>
+        <img class="animal" src="https://upload.wikimedia.org/wikipedia/commons/7/70/Ox_cartoon.png" alt="牛">
+    </div>
+</div>
+
+<img class="side left-top" src="https://upload.wikimedia.org/wikipedia/commons/4/4c/Horse_cartoon.png">
+<img class="side right-top" src="https://upload.wikimedia.org/wikipedia/commons/7/70/Ox_cartoon.png">
+<img class="side left-bottom" src="https://upload.wikimedia.org/wikipedia/commons/4/4c/Horse_cartoon.png">
+<img class="side right-bottom" src="https://upload.wikimedia.org/wikipedia/commons/7/70/Ox_cartoon.png">
+
+<canvas id="dust"></canvas>
+
+<script>
+/******** 目标时间 ********/
+const targetDate = new Date("2026-02-12T18:15:00");
+
+/******** 倒计时 ********/
+function update(){
+    const now = new Date();
+    let diff = targetDate - now;
+
+    if(diff <= 0){
+        document.getElementById('time').innerText = "已完成当前任务";
+        document.getElementById('desc').innerText = "明天继续";
+        return;
+    }
+
+    const d = Math.floor(diff/86400000);
+    const h = Math.floor(diff/3600000)%24;
+    const m = Math.floor(diff/60000)%60;
+    const s = Math.floor(diff/1000)%60;
+
+    document.getElementById('time').innerText =
+        d + " 天 " +
+        String(h).padStart(2,'0') + ":" +
+        String(m).padStart(2,'0') + ":" +
+        String(s).padStart(2,'0');
+}
+setInterval(update,1000);update();
+
+/******** 随机黑色幽默文案 ********/
+const texts = [
+    "再坚持一下",
+    "模型做完没",
+    "可靠性预估搞得怎么样",
+    "这是成长",
+    "今天怎么没加班",
+    "大家都一样",
+    "结果导向",
+    "忍一忍就过去了",
+    "领导看在眼里",
+    "能者多干点"
+];
+
+function spawnText(){
+    const t = document.createElement('div');
+    t.className = 'bubble';
+    t.innerText = texts[Math.floor(Math.random()*texts.length)];
+    t.style.left = Math.random()*70 + 15 + '%';
+    t.style.top = Math.random()*60 + 20 + '%';
+    document.body.appendChild(t);
+    setTimeout(()=>t.remove(),6000);
+}
+setInterval(spawnText,2500);
+
+/******** 灰尘 ********/
+const c = document.getElementById('dust');
+const ctx = c.getContext('2d');
+c.width = innerWidth; c.height = innerHeight;
+let dusts=[];
+for(let i=0;i<140;i++){
+    dusts.push({x:Math.random()*c.width,y:Math.random()*c.height,r:Math.random()*2+0.5,v:Math.random()*0.25});
+}
+function animate(){
+    ctx.clearRect(0,0,c.width,c.height);
+    ctx.fillStyle='rgba(180,180,180,0.25)';
+    dusts.forEach(p=>{
+        p.x+=p.v; if(p.x>c.width)p.x=0;
+        ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+    });
+    requestAnimationFrame(animate);
+}
+animate();
+</script>
+
+</body>
+</html>
