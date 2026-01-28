@@ -136,7 +136,8 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const danmuRef = db.ref("danmu");
-
+const ONE_HOUR = 60 * 60 * 1000;
+    
 /******** 倒计时 ********/
 const targetDate = new Date("2026-02-12T18:15:00");
 function update(){
@@ -167,10 +168,27 @@ function sendDanmu(){
 }
 
 /******** 接收弹幕 ********/
-danmuRef.limitToLast(30).on("child_added", snap=>{
-    const data=snap.val();
-    spawnDanmu(data.text);
+const ONE_HOUR = 60 * 60 * 1000;
+const now = Date.now();
+
+/* 1️⃣ 先读取过去 1 小时的历史弹幕 */
+danmuRef.once("value", snapshot => {
+    snapshot.forEach(child => {
+        const data = child.val();
+        if (now - data.time <= ONE_HOUR) {
+            spawnDanmu(data.text);
+        }
+    });
 });
+
+/* 2️⃣ 再监听新的弹幕（实时） */
+danmuRef.on("child_added", snap => {
+    const data = snap.val();
+    if (Date.now() - data.time <= ONE_HOUR) {
+        spawnDanmu(data.text);
+    }
+});
+
 
 /******** 弹幕动画 ********/
 function spawnDanmu(text){
@@ -179,7 +197,7 @@ function spawnDanmu(text){
     t.innerText=text;
     t.style.top=Math.random()*60+20+'%';
     t.style.left='100%';
-    t.style.animation='danmuMove 8s linear forwards';
+    t.style.animation='danmuMove 20s linear forwards';
     document.body.appendChild(t);
     setTimeout(()=>t.remove(),8000);
 }
@@ -206,3 +224,4 @@ animate();
 
 </body>
 </html>
+
