@@ -63,6 +63,8 @@ h1{letter-spacing:3px;margin-bottom:4px}
     line-height:40px; /* 加大行高，进一步防止覆盖 */
     height:40px;
     transform: translateY(-50%); /* 垂直居中，视觉更舒适 */
+    /* 默认透明度，会被JS动态覆盖 */
+    opacity: 1;
 }
 /* 无限滚动动画：完整滚入滚出，无间断 */
 @keyframes danmuMove{
@@ -170,6 +172,12 @@ try {
 const db = firebase.database();
 const danmuRef = db.ref("danmu");
 const ONE_HOUR = 60 * 60 * 1000;
+// 新增：弹幕衰减配置（可调整）
+const DANMU_FADE_CONFIG = {
+    fadeDuration: 5 * 60 * 1000, // 5分钟内逐渐变淡（毫秒）
+    minOpacity: 0.3, // 最小透明度
+    maxOpacity: 1.0  // 最大透明度
+};
     
 /******** 目标时间 ********/
 const targetDate = new Date("2026-02-12T18:15:00");
@@ -206,7 +214,7 @@ const danmuConfig = {
     maxLines: Math.floor(window.innerHeight / 40), // 自动计算最大行数
     usedLines: new Map(), // 记录行号+最后一个弹幕的结束位置
     batchInterval: 800, // 分批延迟间隔（毫秒），每800ms出一个弹幕
-    danmuQueue: [],    // 弹幕等待队列
+    danmuQueue: [],    // 弹幕等待队列（现在存储完整对象，包含text和time）
     isProcessingQueue: false // 是否正在处理队列
 };
 
@@ -219,6 +227,21 @@ window.addEventListener('resize', () => {
     }
 });
 
+/******** 计算弹幕透明度 ********/
+function calculateDanmuOpacity(createTime) {
+    const now = Date.now();
+    const diff = now - createTime;
+    
+    // 如果弹幕创建时间在衰减时长内，计算衰减后的透明度
+    if (diff < DANMU_FADE_CONFIG.fadeDuration) {
+        // 计算衰减比例：从1到minOpacity线性递减
+        const ratio = 1 - (diff / DANMU_FADE_CONFIG.fadeDuration);
+        return DANMU_FADE_CONFIG.minOpacity + (DANMU_FADE_CONFIG.maxOpacity - DANMU_FADE_CONFIG.minOpacity) * ratio;
+    }
+    // 超过衰减时长，使用最小透明度
+    return DANMU_FADE_CONFIG.minOpacity;
+}
+
 /******** 处理弹幕队列（核心：分批延迟显示） ********/
 function processDanmuQueue() {
     // 如果队列为空或正在处理，直接返回
@@ -228,9 +251,9 @@ function processDanmuQueue() {
     }
 
     danmuConfig.isProcessingQueue = true;
-    // 取出队列第一个弹幕显示
-    const text = danmuConfig.danmuQueue.shift();
-    spawnDanmu(text);
+    // 取出队列第一个弹幕显示（现在是完整对象）
+    const danmu = danmuConfig.danmuQueue.shift();
+    spawnDanmu(danmu.text, danmu.time);
 
     // 延迟指定时间后继续处理下一个
     setTimeout(processDanmuQueue, danmuConfig.batchInterval);
@@ -241,10 +264,11 @@ const danmuInput = document.getElementById('danmuInput');
 // 点击发送
 function sendDanmu(){
     if(!danmuInput.value.trim()) return;
+    const nowTime = Date.now();
     // 写入Firebase
     danmuRef.push({
         text: danmuInput.value,
-        time: Date.now()
+        time: nowTime
     });
     danmuInput.value="";
     danmuInput.focus(); // 发送后保持输入框聚焦，方便连续发送
@@ -264,7 +288,11 @@ danmuRef.once("value", snapshot => {
     snapshot.forEach(child => {
         const data = child.val();
         if (now - data.time <= ONE_HOUR) {
-            danmuConfig.danmuQueue.push(data.text);
+            // 队列存储完整对象，包含text和time
+            danmuConfig.danmuQueue.push({
+                text: data.text,
+                time: data.time
+            });
         }
     });
     // 开始处理历史弹幕队列
@@ -275,7 +303,11 @@ danmuRef.once("value", snapshot => {
 danmuRef.on("child_added", snap => {
     const data = snap.val();
     if (Date.now() - data.time <= ONE_HOUR) {
-        danmuConfig.danmuQueue.push(data.text);
+        // 队列存储完整对象，包含text和time
+        danmuConfig.danmuQueue.push({
+            text: data.text,
+            time: data.time
+        });
         // 如果没有在处理队列，就开始处理
         if (!danmuConfig.isProcessingQueue) {
             processDanmuQueue();
@@ -283,11 +315,16 @@ danmuRef.on("child_added", snap => {
     }
 });
 
-/******** 弹幕生成：防覆盖核心逻辑 ********/
-function spawnDanmu(text){
+/******** 弹幕生成：防覆盖核心逻辑 + 颜色衰减 ********/
+function spawnDanmu(text, createTime){
     const t = document.createElement('div');
     t.className = 'bubble';
     t.innerText = text;
+    
+    // 计算并设置弹幕透明度
+    const opacity = calculateDanmuOpacity(createTime);
+    t.style.opacity = opacity;
+    
     document.body.appendChild(t);
 
     // 1. 获取弹幕实际宽度（必须渲染后才能获取）
