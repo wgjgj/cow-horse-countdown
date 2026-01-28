@@ -138,21 +138,30 @@ const db = firebase.database();
 const danmuRef = db.ref("danmu");
 const ONE_HOUR = 60 * 60 * 1000;
     
-/******** 倒计时 ********/
+/******** 目标时间 ********/
 const targetDate = new Date("2026-02-12T18:15:00");
+
+/******** 倒计时 ********/
 function update(){
     const now = new Date();
     let diff = targetDate - now;
+
     if(diff <= 0){
-        time.innerText="已完成当前任务";
-        desc.innerText="明天继续";
+        document.getElementById('time').innerText = "已完成当前任务";
+        document.getElementById('desc').innerText = "明天继续";
         return;
     }
-    const d=Math.floor(diff/86400000);
-    const h=Math.floor(diff/3600000)%24;
-    const m=Math.floor(diff/60000)%60;
-    const s=Math.floor(diff/1000)%60;
-    time.innerText = `${d} 天 ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+
+    const d = Math.floor(diff/86400000);
+    const h = Math.floor(diff/3600000)%24;
+    const m = Math.floor(diff/60000)%60;
+    const s = Math.floor(diff/1000)%60;
+
+    document.getElementById('time').innerText =
+        d + " 天 " +
+        String(h).padStart(2,'0') + ":" +
+        String(m).padStart(2,'0') + ":" +
+        String(s).padStart(2,'0');
 }
 setInterval(update,1000);update();
 
@@ -224,4 +233,5 @@ animate();
 
 </body>
 </html>
+
 
