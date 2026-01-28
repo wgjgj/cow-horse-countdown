@@ -51,17 +51,21 @@ h1{letter-spacing:3px;margin-bottom:4px}
     to{transform:rotate(360deg) translateX(150px)}
 }
 
-/* 弹幕 */
+/* 弹幕【核心修改】：放大字体、固定行高、不重叠布局 */
 .bubble{
     position:absolute;
     white-space:nowrap;
-    color:#aaa;
-    font-size:14px;
+    color:#e6e6e6; /* 调亮字体更醒目 */
+    font-size:18px; /* 放大弹幕字体（原14px） */
+    font-weight:500;
     z-index:5;
+    line-height:36px; /* 行高，控制垂直间距 */
+    height:36px; /* 固定高度，避免重叠 */
 }
+/* 弹幕无限滚动动画【核心修改】：从右到左完整滚动，无间断 */
 @keyframes danmuMove{
-    from{transform:translateX(0)}
-    to{transform:translateX(-120vw)}
+    0%{transform:translateX(100vw);} /* 初始在屏幕右侧外 */
+    100%{transform:translateX(-100%);} /* 结束在自身左侧外（完整滚出） */
 }
 
 /* 输入框 */
@@ -75,9 +79,11 @@ h1{letter-spacing:3px;margin-bottom:4px}
 .input-box input{
     padding:8px;
     width:220px;
+    font-size:16px;
 }
 .input-box button{
-    padding:8px;
+    padding:8px 16px;
+    cursor:pointer;
 }
 
 /* 灰尘 */
@@ -165,6 +171,18 @@ function update(){
 }
 setInterval(update,1000);update();
 
+/******** 弹幕核心配置【新增】：控制不重叠、滚动速度 ********/
+const danmuConfig = {
+    lineHeight: 36, // 与CSS中bubble的line-height一致，控制垂直行高
+    speed: 15, // 弹幕滚动速度（值越大越快，原20秒→现在15秒）
+    maxLines: Math.floor(window.innerHeight / 36), // 自动计算最大可显示行数（适配屏幕）
+    usedLines: new Set() // 记录已占用的行，避免重叠
+};
+// 窗口大小变化时重新计算最大行数【新增】
+window.addEventListener('resize', () => {
+    danmuConfig.maxLines = Math.floor(window.innerHeight / danmuConfig.lineHeight);
+});
+
 /******** 发送弹幕 ********/
 function sendDanmu(){
     const input=document.getElementById('danmuInput');
@@ -178,8 +196,6 @@ function sendDanmu(){
 
 /******** 接收弹幕 ********/
 const now = Date.now();
-
-/* 1️⃣ 先读取过去 1 小时的历史弹幕 */
 danmuRef.once("value", snapshot => {
     snapshot.forEach(child => {
         const data = child.val();
@@ -188,8 +204,6 @@ danmuRef.once("value", snapshot => {
         }
     });
 });
-
-/* 2️⃣ 再监听新的弹幕（实时） */
 danmuRef.on("child_added", snap => {
     const data = snap.val();
     if (Date.now() - data.time <= ONE_HOUR) {
@@ -197,17 +211,49 @@ danmuRef.on("child_added", snap => {
     }
 });
 
-
-/******** 弹幕动画 ********/
+/******** 弹幕生成【核心重写】：不重叠+无限滚动+自动释放行 ********/
 function spawnDanmu(text){
     const t=document.createElement('div');
     t.className='bubble';
     t.innerText=text;
-    t.style.top=Math.random()*60+20+'%';
-    t.style.left='100%';
-    t.style.animation='danmuMove 20s linear forwards';
     document.body.appendChild(t);
-    setTimeout(()=>t.remove(),20000);
+
+    // 1. 自动分配不重叠的行【核心】
+    let line = 0;
+    for(let i=0; i<danmuConfig.maxLines; i++){
+        if(!danmuConfig.usedLines.has(i)){
+            line = i;
+            danmuConfig.usedLines.add(i);
+            break;
+        }
+    }
+    // 若无空闲行，随机覆盖最顶部行（避免弹幕无法显示）
+    if(line === 0 && danmuConfig.usedLines.size >= danmuConfig.maxLines){
+        line = Math.floor(Math.random() * danmuConfig.maxLines);
+    }
+    // 设置弹幕垂直位置（基于分配的行）
+    t.style.top = `${line * danmuConfig.lineHeight}px`;
+    t.dataset.line = line; // 把行号存到元素上，方便后续释放
+
+    // 2. 设置无限滚动动画（无间断、速度可控）
+    const animateTime = `${danmuConfig.speed}s`;
+    t.style.animation = `danmuMove ${animateTime} linear infinite`; // infinite=无限循环
+
+    // 3. 动画结束时释放占用的行【核心】：避免行被永久占用
+    t.addEventListener('animationiteration', () => {
+        // 每次循环结束后，重新检查行占用（兼容极端情况）
+        if(danmuConfig.usedLines.has(Number(t.dataset.line))){
+            // 延迟释放，避免同行动画衔接间隙重叠
+            setTimeout(() => {
+                danmuConfig.usedLines.delete(Number(t.dataset.line));
+            }, 500);
+        }
+    });
+
+    // 4. 元素销毁时释放行【兜底】
+    t.addEventListener('remove', () => {
+        danmuConfig.usedLines.delete(Number(t.dataset.line));
+    });
 }
 
 /******** 灰尘 ********/
@@ -228,11 +274,12 @@ function animate(){
     requestAnimationFrame(animate);
 }
 animate();
+// 灰尘画布适配窗口大小【新增】
+window.addEventListener('resize', () => {
+    c.width = window.innerWidth;
+    c.height = window.innerHeight;
+});
 </script>
 
 </body>
 </html>
-
-
-
-
