@@ -179,17 +179,58 @@ const DANMU_FADE_CONFIG = {
     maxOpacity: 1.0  // 最大透明度
 };
     
-/******** 目标时间 ********/
-const targetDate = new Date("2026-02-12T18:15:00");
+/******** 核心修改：动态获取最近的法定节假日 ********/
+// 2026年法定节假日列表（可根据实际情况更新）
+const holidays2026 = [
+    { name: "元旦", date: "2026-01-01T18:15:00" }, // 假设下班时间18:00
+    { name: "春节", date: "2026-02-17T18:15:00" },
+    { name: "清明节", date: "2026-04-05T18:15:00" },
+    { name: "劳动节", date: "2026-05-01T18:15:00" },
+    { name: "端午节", date: "2026-06-19T18:15:00" },
+    { name: "中秋节", date: "2026-09-26T18:15:00" },
+    { name: "国庆节", date: "2026-10-01T18:15:00" }
+];
 
-/******** 倒计时 ********/
+// 获取最近的节假日日期
+function getNextHoliday() {
+    const now = new Date();
+    // 筛选出当前时间之后的节假日
+    const futureHolidays = holidays2026.filter(holiday => {
+        return new Date(holiday.date) > now;
+    });
+
+    // 如果没有未来的节假日，返回下一年元旦
+    if (futureHolidays.length === 0) {
+        const nextYear = now.getFullYear() + 1;
+        return {
+            name: "元旦",
+            date: `${nextYear}-01-01T18:00:00`
+        };
+    }
+
+    // 找到最近的一个节假日
+    return futureHolidays.sort((a, b) => {
+        return new Date(a.date) - new Date(b.date);
+    })[0];
+}
+
+// 初始化目标日期为最近的节假日
+const nextHoliday = getNextHoliday();
+const targetDate = new Date(nextHoliday.date);
+const targetHolidayName = nextHoliday.name;
+
+/******** 倒计时（修改描述文字显示节假日名称） ********/
 function update(){
     const now = new Date();
     let diff = targetDate - now;
 
     if(diff <= 0){
         document.getElementById('time').innerText = "已完成当前任务";
-        document.getElementById('desc').innerText = "明天继续";
+        document.getElementById('desc').innerText = `距离${targetHolidayName}已到，明天继续`;
+        // 自动更新到下一个节假日（可选）
+        const newHoliday = getNextHoliday();
+        targetDate = new Date(newHoliday.date);
+        targetHolidayName = newHoliday.name;
         return;
     }
 
@@ -203,211 +244,11 @@ function update(){
         String(h).padStart(2,'0') + ":" +
         String(m).padStart(2,'0') + ":" +
         String(s).padStart(2,'0');
+    document.getElementById('desc').innerText = `距离${targetHolidayName}还有`;
 }
 setInterval(update,1000);update();
 
 /******** 弹幕核心配置：分批延迟+防覆盖+速度（可直接修改） ********/
 const danmuConfig = {
     lineHeight: 40,    // 与CSS中bubble的line-height一致
-    speed: 18,         // 滚动速度（秒，值越小越快）
-    space: 200,        // 同行动画间隔（像素）
-    maxLines: Math.floor(window.innerHeight / 40), // 自动计算最大行数
-    usedLines: new Map(), // 记录行号+最后一个弹幕的结束位置
-    batchInterval: 800, // 分批延迟间隔（毫秒），每800ms出一个弹幕
-    danmuQueue: [],    // 弹幕等待队列（现在存储完整对象，包含text和time）
-    isProcessingQueue: false // 是否正在处理队列
-};
-
-// 窗口大小变化时重新计算配置
-window.addEventListener('resize', () => {
-    danmuConfig.maxLines = Math.floor(window.innerHeight / danmuConfig.lineHeight);
-    // 超出最大行数则清空冗余记录
-    for (let [line] of danmuConfig.usedLines) {
-        if (line >= danmuConfig.maxLines) danmuConfig.usedLines.delete(line);
-    }
-});
-
-/******** 计算弹幕透明度 ********/
-function calculateDanmuOpacity(createTime) {
-    const now = Date.now();
-    const diff = now - createTime;
-    
-    // 如果弹幕创建时间在衰减时长内，计算衰减后的透明度
-    if (diff < DANMU_FADE_CONFIG.fadeDuration) {
-        // 计算衰减比例：从1到minOpacity线性递减
-        const ratio = 1 - (diff / DANMU_FADE_CONFIG.fadeDuration);
-        return DANMU_FADE_CONFIG.minOpacity + (DANMU_FADE_CONFIG.maxOpacity - DANMU_FADE_CONFIG.minOpacity) * ratio;
-    }
-    // 超过衰减时长，使用最小透明度
-    return DANMU_FADE_CONFIG.minOpacity;
-}
-
-/******** 处理弹幕队列（核心：分批延迟显示） ********/
-function processDanmuQueue() {
-    // 如果队列为空或正在处理，直接返回
-    if (danmuConfig.danmuQueue.length === 0) {
-        danmuConfig.isProcessingQueue = false;
-        return;
-    }
-
-    danmuConfig.isProcessingQueue = true;
-    // 取出队列第一个弹幕显示（现在是完整对象）
-    const danmu = danmuConfig.danmuQueue.shift();
-    spawnDanmu(danmu.text, danmu.time);
-
-    // 延迟指定时间后继续处理下一个
-    setTimeout(processDanmuQueue, danmuConfig.batchInterval);
-}
-
-/******** 弹幕发送：点击+回车键 ********/
-const danmuInput = document.getElementById('danmuInput');
-// 点击发送
-function sendDanmu(){
-    if(!danmuInput.value.trim()) return;
-    const nowTime = Date.now();
-    // 写入Firebase
-    danmuRef.push({
-        text: danmuInput.value,
-        time: nowTime
-    });
-    danmuInput.value="";
-    danmuInput.focus(); // 发送后保持输入框聚焦，方便连续发送
-}
-// 回车键发送
-danmuInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault(); // 阻止输入框换行
-        sendDanmu();
-    }
-});
-
-/******** 接收弹幕：历史+实时（加入队列，分批显示） ********/
-const now = Date.now();
-// 读取1小时内历史弹幕（加入队列）
-danmuRef.once("value", snapshot => {
-    snapshot.forEach(child => {
-        const data = child.val();
-        if (now - data.time <= ONE_HOUR) {
-            // 队列存储完整对象，包含text和time
-            danmuConfig.danmuQueue.push({
-                text: data.text,
-                time: data.time
-            });
-        }
-    });
-    // 开始处理历史弹幕队列
-    processDanmuQueue();
-});
-
-// 监听实时新增弹幕（加入队列）
-danmuRef.on("child_added", snap => {
-    const data = snap.val();
-    if (Date.now() - data.time <= ONE_HOUR) {
-        // 队列存储完整对象，包含text和time
-        danmuConfig.danmuQueue.push({
-            text: data.text,
-            time: data.time
-        });
-        // 如果没有在处理队列，就开始处理
-        if (!danmuConfig.isProcessingQueue) {
-            processDanmuQueue();
-        }
-    }
-});
-
-/******** 弹幕生成：防覆盖核心逻辑 + 颜色衰减 ********/
-function spawnDanmu(text, createTime){
-    const t = document.createElement('div');
-    t.className = 'bubble';
-    t.innerText = text;
-    
-    // 计算并设置弹幕透明度
-    const opacity = calculateDanmuOpacity(createTime);
-    t.style.opacity = opacity;
-    
-    document.body.appendChild(t);
-
-    // 1. 获取弹幕实际宽度（必须渲染后才能获取）
-    const danmuWidth = t.offsetWidth;
-    // 屏幕宽度
-    const screenWidth = window.innerWidth;
-
-    // 2. 核心：分配空闲行（同行动画间隔足够才分配）
-    let targetLine = -1;
-    for (let i = 0; i < danmuConfig.maxLines; i++) {
-        // 获取该行最后一个弹幕的结束位置，默认0
-        const lastEndX = danmuConfig.usedLines.get(i) || 0;
-        // 当前时间的屏幕右侧位置 - 间隔 > 上一个弹幕结束位置 → 该行空闲
-        if (screenWidth - danmuConfig.space > lastEndX) {
-            targetLine = i;
-            break;
-        }
-    }
-    // 若无完全空闲行，找“最空闲”的行（最后一个弹幕结束位置最小）
-    if (targetLine === -1) {
-        let minEndX = Infinity;
-        for (let [line, endX] of danmuConfig.usedLines) {
-            if (endX < minEndX) {
-                minEndX = endX;
-                targetLine = line;
-            }
-        }
-        // 兜底：随机分配（防止极端情况）
-        if (targetLine === -1) targetLine = Math.floor(Math.random() * danmuConfig.maxLines);
-    }
-
-    // 3. 计算当前弹幕的结束位置（屏幕宽度 + 弹幕宽度）
-    const currentEndX = screenWidth + danmuWidth;
-    // 更新该行的最后结束位置
-    danmuConfig.usedLines.set(targetLine, currentEndX);
-
-    // 4. 设置弹幕位置
-    const top = (targetLine + 0.5) * danmuConfig.lineHeight; // 垂直居中
-    t.style.top = `${top}px`;
-
-    // 5. 设置无限滚动动画
-    const animateTime = `${danmuConfig.speed}s`;
-    t.style.animation = `danmuMove ${animateTime} linear infinite`;
-
-    // 6. 动画循环回调：更新该行最后结束位置（核心，保持同行动画间隔）
-    t.addEventListener('animationiteration', () => {
-        danmuConfig.usedLines.set(targetLine, screenWidth + danmuWidth);
-    });
-
-    // 7. 兜底：元素移除时清理（防止内存泄漏）
-    t.addEventListener('remove', () => {
-        // 若该行只有当前弹幕，删除记录
-        if (danmuConfig.usedLines.get(targetLine) === currentEndX) {
-            danmuConfig.usedLines.delete(targetLine);
-        }
-    });
-}
-
-/******** 灰尘动效：适配窗口 ********/
-const c = document.getElementById('dust');
-const ctx = c.getContext('2d');
-c.width = innerWidth;
-c.height = innerHeight;
-let dusts = [];
-for(let i=0;i<120;i++){
-    dusts.push({x:Math.random()*c.width,y:Math.random()*c.height,r:Math.random()*2+0.5,v:Math.random()*0.3});
-}
-function animate(){
-    ctx.clearRect(0,0,c.width,c.height);
-    ctx.fillStyle='rgba(180,180,180,0.25)';
-    dusts.forEach(p=>{
-        p.x+=p.v;if(p.x>c.width)p.x=0;
-        ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
-    });
-    requestAnimationFrame(animate);
-}
-animate();
-// 灰尘画布适配窗口
-window.addEventListener('resize', () => {
-    c.width = window.innerWidth;
-    c.height = window.innerHeight;
-});
-</script>
-
-</body>
-</html>
+    speed: 18,         // 滚动速度（秒，
